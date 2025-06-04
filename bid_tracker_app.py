@@ -316,11 +316,16 @@ def project_details_page():
             
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("Created", project['created_date'])
+                st.metric("Created", str(project['created_date']))
             with col2:
-                st.metric("Deadline", project['deadline'])
+                st.metric("Deadline", str(project['deadline']))
             with col3:
-                days_remaining = (project['deadline'] - date.today()).days
+                # Handle date conversion for days remaining calculation
+                if isinstance(project['deadline'], str):
+                    deadline_date = datetime.datetime.strptime(project['deadline'], '%Y-%m-%d').date()
+                else:
+                    deadline_date = project['deadline']
+                days_remaining = (deadline_date - date.today()).days
                 st.metric("Days Remaining", days_remaining)
 
 def analytics_page():

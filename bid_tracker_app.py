@@ -70,9 +70,14 @@ if 'projects' not in st.session_state:
 def authenticate(email, password):
     return email == "ermias@ketos.co" and password == "18221822"
 
-# Generate random project ID
+# Generate project ID (first one is QB6TYKDHVWL9, then random)
 def generate_project_id():
-    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
+    # Check if this is the first project
+    if not st.session_state.projects:
+        return "QB6TYKDHVWL9"
+    else:
+        # Generate random ID for subsequent projects
+        return ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
 
 # Load projects from file (simulate cloud storage)
 def load_projects():

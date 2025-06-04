@@ -1,1 +1,6 @@
+streamlit
+streamlit-authenticator
+pandas
+bcrypt
+PyYAML
 

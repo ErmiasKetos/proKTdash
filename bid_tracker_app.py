@@ -227,6 +227,7 @@ def add_project_page():
             client = st.text_input("Client Name*", placeholder="Enter client name")
             description = st.text_area("Project Description", placeholder="Brief description of the project")
             drive_link = st.text_input("Google Drive Link", placeholder="https://drive.google.com/...")
+            created_date = st.date_input("Created Date", value=date.today(), help="Select when this project was created")
         
         with col2:
             status = st.selectbox("Status", ["Draft", "Submitted", "Pending Response"])
@@ -248,7 +249,7 @@ def add_project_page():
                     'deadline': deadline,
                     'value': value,
                     'priority': priority,
-                    'created_date': date.today(),
+                    'created_date': created_date,
                     'last_updated': datetime.datetime.now()
                 }
                 

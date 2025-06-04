@@ -1,210 +1,383 @@
-# bid_tracker_app.py
-"""
-Streamlit app to track project/bid proposals.
-Author: OpenAI Assistant for Ermias Leggesse
-Date: 2025-06-04 (rev. 2025-06-04a)
-
-How to deploy on Streamlit Cloud
--------------------------------
-1. Create a new GitHub repo and add this file (`bid_tracker_app.py`).
-2. Add a `requirements.txt` with **pinned versions** to avoid breaking‑changes:
-
-   ```text
-   streamlit==1.34.0
-   streamlit-authenticator==0.3.2
-   pandas>=2.2
-   bcrypt>=4.1
-   PyYAML>=6.0
-   ```
-3. Push to GitHub and on streamlit.io, create a new app from the repo.
-
-Security note: credentials are hard‑coded for demo only; replace with env‑vars or a secrets manager in production.
-"""
-
-from __future__ import annotations
-import os
+import streamlit as st
+import pandas as pd
 import random
 import string
-from datetime import datetime
+import datetime
+from datetime import date
+import json
+import os
 
-import pandas as pd
-import streamlit as st
-import streamlit_authenticator as stauth
-
-# -------------------------------------------------------
-# ----- CONFIGURATION -----------------------------------
-# -------------------------------------------------------
-APP_TITLE = "📑 Bid / Project Tracker"
-DATA_FILE = "projects.csv"
-
-# Single‑user credentials (demo)
-NAMES = ["Ermias Leggesse"]
-USERNAMES = ["ermias@ketos.co"]
-PASSWORDS = ["18221822"]  # replace in prod
-
-# -------------------------------------------------------
-# ----- HELPERS -----------------------------------------
-# -------------------------------------------------------
-
-def generate_id(length: int = 12) -> str:
-    """Random uppercase alphanumeric ID."""
-    return "".join(random.choices(string.ascii_uppercase + string.digits, k=length))
-
-
-def load_data(file_path: str) -> pd.DataFrame:
-    if os.path.exists(file_path):
-        return pd.read_csv(file_path)
-    cols = [
-        "id",
-        "title",
-        "status",
-        "drive_link",
-        "created",
-        "last_updated",
-        "notes",
-    ]
-    return pd.DataFrame(columns=cols)
-
-
-def save_data(df: pd.DataFrame, file_path: str):
-    df.to_csv(file_path, index=False)
-
-# -------------------------------------------------------
-# ----- AUTHENTICATION (v0.3 API‑safe) ------------------
-# -------------------------------------------------------
-# The Hasher API changed between versions. The following helper
-# adapts automatically so the app keeps working even if the library
-# signature shifts again.
-
-
-def hash_passwords(password_list):
-    """Return list of hashed passwords regardless of stauth version."""
-    try:
-        # Newer (<0.3.0) signature: Hasher().generate(pws)
-        return stauth.Hasher().generate(password_list)  # type: ignore[arg-type]
-    except TypeError:
-        # Older signature: Hasher(pws).generate()
-        return stauth.Hasher(password_list).generate()
-
-
-hashed_passwords = hash_passwords(PASSWORDS)
-
-authenticator = stauth.Authenticate(
-    NAMES,
-    USERNAMES,
-    hashed_passwords,
-    "bid_tracker_cookie",
-    "abcdef",
-    cookie_expiry_days=30,
+# Page configuration
+st.set_page_config(
+    page_title="Project Bid Tracker",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-name, auth_status, username = authenticator.login("Login", "main")
+# Custom CSS for better styling
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #1f77b4;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .metric-card {
+        background-color: #f0f2f6;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin: 0.5rem 0;
+    }
+    .status-submitted {
+        background-color: #d4edda;
+        color: #155724;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+        font-weight: bold;
+    }
+    .status-draft {
+        background-color: #fff3cd;
+        color: #856404;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+        font-weight: bold;
+    }
+    .status-pending {
+        background-color: #cce5ff;
+        color: #004085;
+        padding: 0.25rem 0.5rem;
+        border-radius: 0.25rem;
+        font-weight: bold;
+    }
+    .project-id {
+        font-family: monospace;
+        font-weight: bold;
+        color: #dc3545;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-if auth_status is False:
-    st.error("Username or password is incorrect.")
-    st.stop()
+# Initialize session state
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+if 'projects' not in st.session_state:
+    st.session_state.projects = []
 
-if auth_status is None:
-    st.warning("Please enter your credentials.")
-    st.stop()
+# Authentication function
+def authenticate(email, password):
+    return email == "ermias@ketos.co" and password == "18221822"
 
-# -------------------------------------------------------
-# ----- MAIN APP ----------------------------------------
-# -------------------------------------------------------
+# Generate random project ID
+def generate_project_id():
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))
 
-st.set_page_config(page_title=APP_TITLE, layout="wide")
-authenticator.logout("Logout", "sidebar")
-st.sidebar.success(f"Logged in as {name}")
-st.title(APP_TITLE)
+# Load projects from file (simulate cloud storage)
+def load_projects():
+    try:
+        if os.path.exists('projects.json'):
+            with open('projects.json', 'r') as f:
+                return json.load(f)
+    except:
+        pass
+    return []
 
-# Load / create dataset
-projects_df = load_data(DATA_FILE)
+# Save projects to file (simulate cloud storage)
+def save_projects(projects):
+    try:
+        with open('projects.json', 'w') as f:
+            json.dump(projects, f, indent=2, default=str)
+    except:
+        pass
 
-# Sidebar navigation
-section = st.sidebar.radio("Go to", ["Add / Edit Project", "Dashboard"], label_visibility="collapsed")
+# Login page
+def login_page():
+    st.markdown('<h1 class="main-header">🔐 Project Bid Tracker Login</h1>', unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("### Please login to access your project dashboard")
+        
+        with st.form("login_form"):
+            email = st.text_input("Email", placeholder="Enter your email")
+            password = st.text_input("Password", type="password", placeholder="Enter your password")
+            login_button = st.form_submit_button("Login", use_container_width=True)
+            
+            if login_button:
+                if authenticate(email, password):
+                    st.session_state.authenticated = True
+                    st.success("Login successful! Redirecting...")
+                    st.rerun()
+                else:
+                    st.error("Invalid email or password. Please try again.")
 
-# ========== ADD / EDIT SECTION ==========================
-if section == "Add / Edit Project":
-    st.subheader("➕ Add a New Project / Bid")
-    with st.form("project_form", clear_on_submit=True):
-        title = st.text_input("Proposal Title", placeholder="e.g., Valley Water Monitoring Grant")
-        status = st.selectbox(
-            "Current Stage", ["Draft", "Writing", "Submitted", "Awarded", "Closed"], index=1
-        )
-        drive_link = st.text_input("Google Drive Document Link", placeholder="https://drive.google.com/...")
-        notes = st.text_area("Notes / Quick Summary")
-        submitted = st.form_submit_button("Save Project")
-
-    if submitted:
-        if not title:
-            st.error("⚠️ Title is required.")
-        else:
-            pid = generate_id()
-            now_iso = datetime.utcnow().isoformat(timespec="seconds")
-            new_row = {
-                "id": pid,
-                "title": title,
-                "status": status,
-                "drive_link": drive_link,
-                "created": now_iso,
-                "last_updated": now_iso,
-                "notes": notes,
-            }
-            projects_df = pd.concat([projects_df, pd.DataFrame([new_row])], ignore_index=True)
-            save_data(projects_df, DATA_FILE)
-            st.success(f"✅ Project {pid} — '{title}' added!")
-            st.balloons()
-
-    # Inline editing of saved rows
-    if not projects_df.empty:
-        st.write("### Existing Projects (click to expand)")
-        with st.expander("View / Update Projects"):
-            edited_df = st.data_editor(
-                projects_df,
-                num_rows="dynamic",
-                use_container_width=True,
-                key="data_editor",
-            )
-            if st.button("💾 Save Changes to Disk"):
-                save_data(edited_df, DATA_FILE)
-                projects_df = edited_df  # update in‑memory view too
-                st.success("Changes saved.")
-
-# ========== DASHBOARD SECTION ==========================
-elif section == "Dashboard":
-    st.subheader("📊 Project Dashboard")
-
-    if projects_df.empty:
-        st.info("No projects yet. Use 'Add / Edit Project' to create your first record.")
-    else:
-        # Quick metrics per status
-        counts = projects_df["status"].value_counts().sort_index()
-        cols = st.columns(len(counts))
-        for i, (stat, cnt) in enumerate(counts.items()):
-            cols[i].metric(stat, int(cnt))
-
+# Main dashboard
+def main_dashboard():
+    # Load projects on startup
+    if not st.session_state.projects:
+        st.session_state.projects = load_projects()
+    
+    # Header
+    st.markdown('<h1 class="main-header">📊 Project Bid Tracker Dashboard</h1>', unsafe_allow_html=True)
+    
+    # Sidebar
+    with st.sidebar:
+        st.markdown("### Navigation")
+        page = st.radio("Select Page", ["Dashboard", "Add New Project", "Project Details", "Analytics"])
+        
         st.markdown("---")
-        col1, col2 = st.columns(2)
+        if st.button("Logout"):
+            st.session_state.authenticated = False
+            st.rerun()
+    
+    if page == "Dashboard":
+        dashboard_page()
+    elif page == "Add New Project":
+        add_project_page()
+    elif page == "Project Details":
+        project_details_page()
+    elif page == "Analytics":
+        analytics_page()
+
+def dashboard_page():
+    st.markdown("## 📋 Project Overview")
+    
+    # Metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    total_projects = len(st.session_state.projects)
+    submitted_projects = len([p for p in st.session_state.projects if p['status'] == 'Submitted'])
+    draft_projects = len([p for p in st.session_state.projects if p['status'] == 'Draft'])
+    pending_projects = len([p for p in st.session_state.projects if p['status'] == 'Pending Response'])
+    
+    with col1:
+        st.metric("Total Projects", total_projects)
+    with col2:
+        st.metric("Submitted", submitted_projects)
+    with col3:
+        st.metric("Drafts", draft_projects)
+    with col4:
+        st.metric("Pending Response", pending_projects)
+    
+    st.markdown("---")
+    
+    # Projects table
+    if st.session_state.projects:
+        st.markdown("## 📊 All Projects")
+        
+        # Search and filter
+        col1, col2 = st.columns([2, 1])
         with col1:
-            active_status = st.multiselect(
-                "Filter by Status", options=projects_df["status"].unique(), default=projects_df["status"].unique()
-            )
+            search_term = st.text_input("🔍 Search projects", placeholder="Search by title or ID...")
         with col2:
-            query = st.text_input("Search Title / ID")
+            status_filter = st.selectbox("Filter by Status", ["All", "Draft", "Submitted", "Pending Response"])
+        
+        # Filter projects
+        filtered_projects = st.session_state.projects
+        
+        if search_term:
+            filtered_projects = [p for p in filtered_projects 
+                               if search_term.lower() in p['title'].lower() or search_term.lower() in p['id'].lower()]
+        
+        if status_filter != "All":
+            filtered_projects = [p for p in filtered_projects if p['status'] == status_filter]
+        
+        # Display projects
+        for project in filtered_projects:
+            with st.expander(f"**{project['id']}** - {project['title']}", expanded=False):
+                col1, col2, col3 = st.columns([2, 1, 1])
+                
+                with col1:
+                    st.write(f"**Description:** {project['description']}")
+                    st.write(f"**Client:** {project['client']}")
+                    if project['drive_link']:
+                        st.markdown(f"**Google Drive:** [Open Document]({project['drive_link']})")
+                
+                with col2:
+                    status_class = f"status-{project['status'].lower().replace(' ', '-')}"
+                    st.markdown(f'<div class="{status_class}">{project["status"]}</div>', unsafe_allow_html=True)
+                    st.write(f"**Created:** {project['created_date']}")
+                
+                with col3:
+                    st.write(f"**Deadline:** {project['deadline']}")
+                    st.write(f"**Value:** ${project['value']:,}")
+    else:
+        st.info("No projects found. Add your first project using the 'Add New Project' page!")
 
-        view_df = projects_df[projects_df["status"].isin(active_status)].copy()
-        if query:
-            view_df = view_df[
-                view_df["title"].str.contains(query, case=False, na=False)
-                | view_df["id"].str.contains(query, case=False, na=False)
-            ]
+def add_project_page():
+    st.markdown("## ➕ Add New Project")
+    
+    with st.form("add_project_form"):
+        # Generate new project ID
+        project_id = generate_project_id()
+        st.markdown(f'**Project ID:** <span class="project-id">{project_id}</span>', unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            title = st.text_input("Project Title*", placeholder="Enter project title")
+            client = st.text_input("Client Name*", placeholder="Enter client name")
+            description = st.text_area("Project Description", placeholder="Brief description of the project")
+            drive_link = st.text_input("Google Drive Link", placeholder="https://drive.google.com/...")
+        
+        with col2:
+            status = st.selectbox("Status", ["Draft", "Submitted", "Pending Response"])
+            deadline = st.date_input("Deadline", min_value=date.today())
+            value = st.number_input("Project Value ($)", min_value=0, step=1000)
+            priority = st.selectbox("Priority", ["Low", "Medium", "High"])
+        
+        submitted = st.form_submit_button("Add Project", use_container_width=True)
+        
+        if submitted:
+            if title and client:
+                new_project = {
+                    'id': project_id,
+                    'title': title,
+                    'client': client,
+                    'description': description,
+                    'drive_link': drive_link,
+                    'status': status,
+                    'deadline': deadline,
+                    'value': value,
+                    'priority': priority,
+                    'created_date': date.today(),
+                    'last_updated': datetime.datetime.now()
+                }
+                
+                st.session_state.projects.append(new_project)
+                save_projects(st.session_state.projects)
+                
+                st.success(f"✅ Project {project_id} added successfully!")
+                st.balloons()
+            else:
+                st.error("Please fill in all required fields (marked with *)")
 
-        # Configure link column so it shows as hyperlink in Streamlit 1.34+
-        st.dataframe(
-            view_df,
-            use_container_width=True,
-            column_config={"drive_link": st.column_config.LinkColumn("Drive Doc")},
-            hide_index=True,
-        )
+def project_details_page():
+    st.markdown("## 📝 Project Details & Management")
+    
+    if not st.session_state.projects:
+        st.info("No projects available. Add a project first!")
+        return
+    
+    # Select project
+    project_options = [f"{p['id']} - {p['title']}" for p in st.session_state.projects]
+    selected_project = st.selectbox("Select Project", project_options)
+    
+    if selected_project:
+        # Find the selected project
+        project_id = selected_project.split(' - ')[0]
+        project = next((p for p in st.session_state.projects if p['id'] == project_id), None)
+        
+        if project:
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                st.markdown(f"### {project['title']}")
+                st.markdown(f"**Project ID:** `{project['id']}`")
+                st.markdown(f"**Client:** {project['client']}")
+                st.markdown(f"**Description:** {project['description']}")
+                
+                if project['drive_link']:
+                    st.markdown(f"**Google Drive:** [Open Document]({project['drive_link']})")
+            
+            with col2:
+                st.markdown("### Quick Actions")
+                
+                # Update status
+                new_status = st.selectbox("Update Status", 
+                                        ["Draft", "Submitted", "Pending Response"], 
+                                        index=["Draft", "Submitted", "Pending Response"].index(project['status']))
+                
+                if st.button("Update Status"):
+                    project['status'] = new_status
+                    project['last_updated'] = datetime.datetime.now()
+                    save_projects(st.session_state.projects)
+                    st.success("Status updated!")
+                    st.rerun()
+                
+                # Delete project
+                if st.button("🗑️ Delete Project", type="secondary"):
+                    st.session_state.projects = [p for p in st.session_state.projects if p['id'] != project_id]
+                    save_projects(st.session_state.projects)
+                    st.success("Project deleted!")
+                    st.rerun()
+            
+            # Project timeline
+            st.markdown("---")
+            st.markdown("### 📅 Project Timeline")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Created", project['created_date'])
+            with col2:
+                st.metric("Deadline", project['deadline'])
+            with col3:
+                days_remaining = (project['deadline'] - date.today()).days
+                st.metric("Days Remaining", days_remaining)
 
-        st.caption("Tip: Click column headers to sort.")
+def analytics_page():
+    st.markdown("## 📈 Analytics & Insights")
+    
+    if not st.session_state.projects:
+        st.info("No projects available for analytics. Add some projects first!")
+        return
+    
+    # Status distribution
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("### 📊 Project Status Distribution")
+        status_counts = {}
+        for project in st.session_state.projects:
+            status = project['status']
+            status_counts[status] = status_counts.get(status, 0) + 1
+        
+        if status_counts:
+            df_status = pd.DataFrame(list(status_counts.items()), columns=['Status', 'Count'])
+            st.bar_chart(df_status.set_index('Status'))
+    
+    with col2:
+        st.markdown("### 💰 Total Project Value")
+        total_value = sum(p['value'] for p in st.session_state.projects)
+        st.metric("Total Portfolio Value", f"${total_value:,}")
+        
+        # Value by status
+        value_by_status = {}
+        for project in st.session_state.projects:
+            status = project['status']
+            value_by_status[status] = value_by_status.get(status, 0) + project['value']
+        
+        st.markdown("**Value by Status:**")
+        for status, value in value_by_status.items():
+            st.write(f"• {status}: ${value:,}")
+    
+    # Recent activity
+    st.markdown("---")
+    st.markdown("### 🕐 Recent Projects")
+    
+    # Sort projects by creation date
+    recent_projects = sorted(st.session_state.projects, 
+                           key=lambda x: x['created_date'], 
+                           reverse=True)[:5]
+    
+    for project in recent_projects:
+        col1, col2, col3 = st.columns([2, 1, 1])
+        with col1:
+            st.write(f"**{project['title']}**")
+        with col2:
+            st.write(f"*{project['status']}*")
+        with col3:
+            st.write(f"${project['value']:,}")
+
+# Main app logic
+def main():
+    if not st.session_state.authenticated:
+        login_page()
+    else:
+        main_dashboard()
+
+if __name__ == "__main__":
+    main()

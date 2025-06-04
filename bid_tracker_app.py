@@ -131,7 +131,7 @@ def main_dashboard():
     # Sidebar
     with st.sidebar:
         st.markdown("### Navigation")
-        page = st.radio("Select Page", ["Dashboard", "Add New Project", "Project Details", "Analytics"])
+        page = st.radio("Select Page", ["Dashboard", "Add New Project", "Edit Project", "Project Details", "Analytics"])
         
         st.markdown("---")
         if st.button("Logout"):
@@ -142,6 +142,8 @@ def main_dashboard():
         dashboard_page()
     elif page == "Add New Project":
         add_project_page()
+    elif page == "Edit Project":
+        edit_project_page()
     elif page == "Project Details":
         project_details_page()
     elif page == "Analytics":
@@ -260,6 +262,118 @@ def add_project_page():
                 st.balloons()
             else:
                 st.error("Please fill in all required fields (marked with *)")
+
+def edit_project_page():
+    st.markdown("## ✏️ Edit Project")
+    
+    if not st.session_state.projects:
+        st.info("No projects available to edit. Add a project first!")
+        return
+    
+    # Select project to edit
+    project_options = [f"{p['id']} - {p['title']}" for p in st.session_state.projects]
+    selected_project = st.selectbox("Select Project to Edit", project_options)
+    
+    if selected_project:
+        # Find the selected project
+        project_id = selected_project.split(' - ')[0]
+        project_index = next((i for i, p in enumerate(st.session_state.projects) if p['id'] == project_id), None)
+        
+        if project_index is not None:
+            project = st.session_state.projects[project_index]
+            
+            st.markdown(f"### Editing Project: `{project['id']}`")
+            
+            with st.form("edit_project_form"):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # Convert date strings back to date objects if needed
+                    if isinstance(project['created_date'], str):
+                        created_date_value = datetime.datetime.strptime(project['created_date'], '%Y-%m-%d').date()
+                    else:
+                        created_date_value = project['created_date']
+                    
+                    title = st.text_input("Project Title*", value=project['title'])
+                    client = st.text_input("Client Name*", value=project['client'])
+                    description = st.text_area("Project Description", value=project['description'])
+                    drive_link = st.text_input("Google Drive Link", value=project['drive_link'])
+                    created_date = st.date_input("Created Date", value=created_date_value)
+                
+                with col2:
+                    status = st.selectbox("Status", 
+                                        ["Draft", "Submitted", "Pending Response"], 
+                                        index=["Draft", "Submitted", "Pending Response"].index(project['status']))
+                    
+                    # Convert deadline string back to date object if needed
+                    if isinstance(project['deadline'], str):
+                        deadline_value = datetime.datetime.strptime(project['deadline'], '%Y-%m-%d').date()
+                    else:
+                        deadline_value = project['deadline']
+                    
+                    deadline = st.date_input("Deadline", value=deadline_value)
+                    value = st.number_input("Project Value ($)", value=project['value'], min_value=0, step=1000)
+                    priority = st.selectbox("Priority", 
+                                          ["Low", "Medium", "High"], 
+                                          index=["Low", "Medium", "High"].index(project['priority']))
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    update_button = st.form_submit_button("💾 Update Project", use_container_width=True)
+                with col2:
+                    cancel_button = st.form_submit_button("❌ Cancel", use_container_width=True)
+                
+                if update_button:
+                    if title and client:
+                        # Update the project
+                        updated_project = {
+                            'id': project['id'],  # Keep the same ID
+                            'title': title,
+                            'client': client,
+                            'description': description,
+                            'drive_link': drive_link,
+                            'status': status,
+                            'deadline': deadline,
+                            'value': value,
+                            'priority': priority,
+                            'created_date': created_date,
+                            'last_updated': datetime.datetime.now()
+                        }
+                        
+                        st.session_state.projects[project_index] = updated_project
+                        save_projects(st.session_state.projects)
+                        
+                        st.success(f"✅ Project {project['id']} updated successfully!")
+                        st.balloons()
+                    else:
+                        st.error("Please fill in all required fields (marked with *)")
+                
+                if cancel_button:
+                    st.info("Edit cancelled. No changes were made.")
+            
+            # Show comparison of changes
+            st.markdown("---")
+            st.markdown("### 📊 Current Project Details")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**Current Information:**")
+                st.write(f"• **Title:** {project['title']}")
+                st.write(f"• **Client:** {project['client']}")
+                st.write(f"• **Status:** {project['status']}")
+                st.write(f"• **Value:** ${project['value']:,}")
+                st.write(f"• **Priority:** {project['priority']}")
+            
+            with col2:
+                st.markdown("**Dates:**")
+                st.write(f"• **Created:** {project['created_date']}")
+                st.write(f"• **Deadline:** {project['deadline']}")
+                if 'last_updated' in project:
+                    last_updated = project['last_updated']
+                    if isinstance(last_updated, str):
+                        st.write(f"• **Last Updated:** {last_updated}")
+                    else:
+                        st.write(f"• **Last Updated:** {last_updated.strftime('%Y-%m-%d %H:%M:%S')}")
 
 def project_details_page():
     st.markdown("## 📝 Project Details & Management")
